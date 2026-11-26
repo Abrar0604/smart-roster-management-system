@@ -1,0 +1,221 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ===============================================
+// ORGANIZATIONAL STRUCTURE
+// ===============================================
+
+model Pod {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?
+  leadId      String?
+  lead        Employee?  @relation("PodLead", fields: [leadId], references: [id], onDelete: SetNull)
+  employees   Employee[] @relation("PodMembers")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Employee {
+  id                String           @id @default(cuid())
+  name              String
+  email             String?          @unique
+  role              String           @default("AGENT") // AGENT | POD_LEAD | BACKUP_FLOAT
+  podId             String
+  pod               Pod              @relation("PodMembers", fields: [podId], references: [id], onDelete: Restrict)
+  leadsPods         Pod[]            @relation("PodLead")
+  maxWeeklyWorkdays Int              @default(6)
+  preferredOffDay   Int?             // 0=Sun, 1=Mon, ..., 6=Sat
+  shiftWindow       String           @default("STANDARD") // STANDARD | MORNING | EVENING | NIGHT | FLEXIBLE
+  active            Boolean          @default(true)
+  assignments       Assignment[]
+  timeOffs          TimeOff[]
+  rosterEntries     RosterEntry[]
+  conflicts         RosterConflict[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+}
+
+// ===============================================
+// DEMAND SIDE: BRANDS, PROCESSES, OPERATING RULES
+// ===============================================
+
+model Brand {
+  id                String               @id @default(cuid())
+  name              String               @unique
+  code              String               @unique
+  category          String?
+  description       String?
+  active            Boolean              @default(true)
+  processConfigs    BrandProcessConfig[]
+  assignments       Assignment[]
+  rosterAllocations RosterAllocation[]
+  conflicts         RosterConflict[]
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+}
+
+model Process {
+  id                String               @id @default(cuid())
+  code              String               @unique // CS, ACC, NDR, RETENTION
+  name              String
+  description       String?
+  processConfigs    BrandProcessConfig[]
+  assignments       Assignment[]
+  rosterAllocations RosterAllocation[]
+  conflicts         RosterConflict[]
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+}
+
+model BrandProcessConfig {
+  id            String   @id @default(cuid())
+  brandId       String
+  brand         Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  processId     String
+  process       Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  operatingRule String   // EVERY_DAY | DAILY_NO_HOLIDAYS | NO_SUNDAYS_NO_HOLIDAYS | CUSTOM
+  shiftWindow   String   @default("STANDARD") // STANDARD | MORNING | EVENING | NIGHT
+  minStaff      Int      @default(1)
+  dayOverrides  String?  // JSON: { operatingDays?: number[], dayMinStaff?: Record<string, number> }
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([brandId, processId])
+}
+
+// ===============================================
+// SUPPLY SIDE: ASSIGNMENTS & AVAILABILITY
+// ===============================================
+
+model Assignment {
+  id             String   @id @default(cuid())
+  employeeId     String
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  brandId        String
+  brand          Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  processId      String
+  process        Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  allocationType String   @default("PRIMARY") // PRIMARY | BACKUP
+  shiftWindow    String   @default("STANDARD") // STANDARD | MORNING | EVENING | NIGHT
+  capacityWeight Float    @default(1.0)
+  priority       Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([employeeId, brandId, processId])
+}
+
+model TimeOff {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       DateTime
+  type       String   // PLANNED_LEAVE | COMP_OFF | UNAVAILABLE
+  status     String   @default("APPROVED") // APPROVED | PENDING | REJECTED
+  reason     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([employeeId, date])
+}
+
+model PublicHoliday {
+  id        String   @id @default(cuid())
+  date      DateTime
+  name      String
+  scope     String   @default("GLOBAL") // GLOBAL or specific Brand ID
+  createdAt DateTime @default(now())
+
+  @@unique([date, scope])
+}
+
+// ===============================================
+// GENERATED SCHEDULE STATE
+// ===============================================
+
+model Roster {
+  id          String            @id @default(cuid())
+  month       Int
+  year        Int
+  status      String            @default("DRAFT") // DRAFT | PUBLISHED
+  notes       String?
+  generatedAt DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  entries     RosterEntry[]
+  conflicts   RosterConflict[]
+  changeLogs  RosterChangeLog[]
+
+  @@unique([month, year])
+}
+
+model RosterEntry {
+  id               String             @id @default(cuid())
+  rosterId         String
+  roster           Roster             @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  date             DateTime
+  employeeId       String
+  employee         Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  status           String             // WORKING | WEEKLY_OFF | PUBLIC_HOLIDAY | PLANNED_LEAVE | COMP_OFF | UNAVAILABLE
+  shiftWindow      String             @default("STANDARD")
+  isManualOverride Boolean            @default(false)
+  overrideReason   String?
+  allocations      RosterAllocation[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([rosterId, date, employeeId])
+}
+
+model RosterAllocation {
+  id             String      @id @default(cuid())
+  rosterEntryId  String
+  rosterEntry    RosterEntry @relation(fields: [rosterEntryId], references: [id], onDelete: Cascade)
+  brandId        String
+  brand          Brand       @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  processId      String
+  process        Process     @relation(fields: [processId], references: [id], onDelete: Cascade)
+  shiftWindow    String      @default("STANDARD")
+  isBackup       Boolean     @default(false)
+  capacityWeight Float       @default(1.0)
+  createdAt      DateTime    @default(now())
+
+  @@unique([rosterEntryId, brandId, processId])
+}
+
+model RosterConflict {
+  id           String    @id @default(cuid())
+  rosterId     String
+  roster       Roster    @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  date         DateTime
+  brandId      String?
+  brand        Brand?    @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  processId    String?
+  process      Process?  @relation(fields: [processId], references: [id], onDelete: SetNull)
+  employeeId   String?
+  employee     Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  severity     String    // HARD | SOFT
+  conflictType String    // UNCOVERED | UNDERSTAFFED | DOUBLE_BOOKED | INCOMPATIBLE_SHIFT | LEAVE_CLASH | CASCADING_GAP | PREFERENCE_VIOLATED | WEEKLY_OFF_DEFICIT | FAIRNESS_WARNING
+  description  String
+  suggestions  String?   // JSON array of suggestion objects
+  resolved     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model RosterChangeLog {
+  id         String   @id @default(cuid())
+  rosterId   String
+  roster     Roster   @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  actionType String   // GENERATED | MANUAL_EDIT | LEAVE_IMPACT | BACKUP_ASSIGNED | PARTIAL_REGEN | PUBLISHED
+  summary    String
+  details    String?
+  createdAt  DateTime @default(now())
+}
