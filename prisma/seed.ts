@@ -5,6 +5,14 @@ import { parseUTCDate } from "../src/lib/utils";
 const prisma = new PrismaClient();
 
 async function main() {
+  if (process.argv.includes("--if-empty")) {
+    const existingPods = await prisma.pod.count();
+    if (existingPods > 0) {
+      console.log("Database already seeded — skipping (--if-empty).");
+      return;
+    }
+  }
+
   console.log("Seeding Smart Roster database...");
 
   // Clean slate for idempotent re-seeding

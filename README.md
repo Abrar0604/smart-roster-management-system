@@ -8,7 +8,7 @@ A full-stack, constraint-aware operations roster management application built fo
 
 - **Framework:** Next.js 16 (App Router, Server Actions, Route Handlers)
 - **Language:** TypeScript (strict mode)
-- **Database & ORM:** SQLite with Prisma ORM (`prisma/schema.prisma`)
+- **Database & ORM:** PostgreSQL with Prisma ORM (`prisma/schema.prisma`)
 - **UI:** Tailwind CSS v4 + shadcn/ui (Radix primitives) + Lucide icons
 - **Testing:** Vitest (`src/lib/scheduler/__tests__/scheduler.test.ts`)
 - **Export:** CSV & Excel (`.xlsx` via SheetJS `xlsx`)
@@ -56,6 +56,7 @@ A full-stack, constraint-aware operations roster management application built fo
 2. **Configure environment variables:**
    ```bash
    cp .env.example .env
+   # Set DATABASE_URL to your local PostgreSQL or Neon/Supabase PostgreSQL URL
    ```
 3. **Initialize database & run seed script:**
    ```bash
@@ -71,6 +72,15 @@ A full-stack, constraint-aware operations roster management application built fo
    npm run dev
    ```
    Open `http://localhost:3000`.
+
+---
+
+## Free Deployment (Vercel + Neon PostgreSQL)
+
+1. Create a free PostgreSQL database at [neon.tech](https://neon.tech) and copy the `DATABASE_URL`.
+2. Import this GitHub repository in [vercel.com](https://vercel.com).
+3. Add `DATABASE_URL` in **Project Settings → Environment Variables**.
+4. Deploy — `vercel.json` automatically runs `prisma generate`, `prisma db push`, and `tsx prisma/seed.ts --if-empty` during the build so the public URL ships pre-seeded with the December 2026 dataset.
 
 ---
 
